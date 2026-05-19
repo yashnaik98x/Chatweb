@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>— chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #050505;
+    --bg-lift: #0b0b0a;
+    --border: #16161410;
+    --border-strong: #1f1e1c;
+    --text: #d8d4c8;
+    --muted: #6b6862;
+    --dim: #38362f;
+    --accent: #ffaa55;
+    --error: #ff7a59;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 14px;
+    line-height: 1.65;
+    display: flex;
+    flex-direction: column;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* faint noise */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/></svg>");
+    pointer-events: none;
+    z-index: 1;
+    mix-blend-mode: overlay;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border-strong);
+    padding: 14px 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+    z-index: 3;
+    background: var(--bg);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--dim);
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .dot.online {
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent), 0 0 2px var(--accent);
+  }
+  .actions { display: flex; gap: 4px; }
+  .action {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-family: inherit; font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; padding: 6px 10px;
+    transition: color 0.15s, background 0.15s;
+    border-radius: 2px;
+  }
+  .action:hover { color: var(--accent); background: var(--bg-lift); }
+
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 22px 8px;
+    position: relative;
+    z-index: 2;
+    scroll-behavior: smooth;
+  }
+  .msg {
+    display: grid;
+    grid-template-columns: 52px auto 1fr;
+    gap: 14px;
+    padding: 2px 0;
+    word-break: break-word;
+  }
+  .msg .ts { color: var(--dim); font-size: 11.5px; padding-top: 2px; user-select: none; }
+  .msg .user { color: var(--accent); font-weight: 500; }
+  .msg .text { color: var(--text); white-space: pre-wrap; }
+  .msg.mine .user { font-weight: 600; }
+
+  .sys {
+    color: var(--muted);
+    padding: 10px 0 4px;
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+  }
+  .sys::before { content: '— '; color: var(--dim); }
+
+  .err {
+    color: var(--error);
+    padding: 8px 12px;
+    margin: 8px 0;
+    font-size: 12px;
+    border-left: 2px solid var(--error);
+    background: rgba(255,122,89,0.06);
+  }
+
+  form {
+    border-top: 1px solid var(--border-strong);
+    padding: 14px 22px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    position: relative;
+    z-index: 3;
+    background: var(--bg);
+  }
+  .prompt { color: var(--accent); font-weight: 500; }
+  input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    outline: none;
+    padding: 4px 0;
+    caret-color: var(--accent);
+  }
+  input::placeholder { color: var(--dim); }
+
+  /* gate */
+  .gate {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 20;
+    padding: 24px;
+  }
+  .gate-inner { max-width: 440px; width: 100%; }
+  .gate-tag {
+    font-size: 11px; color: var(--accent);
+    letter-spacing: 0.3em; text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .gate-title {
+    font-size: 22px;
+    color: var(--text);
+    margin-bottom: 12px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .gate-desc {
+    color: var(--muted); font-size: 13px; margin-bottom: 32px;
+    line-height: 1.75;
+  }
+  .gate-row {
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border-strong);
+    padding-bottom: 10px;
+    transition: border-color 0.2s;
+  }
+  .gate-row:focus-within { border-color: var(--accent); }
+  .gate-row span { color: var(--accent); font-size: 18px; }
+  .gate-row input { font-size: 18px; }
+  .gate button {
+    margin-top: 26px;
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    font-family: inherit;
+    padding: 11px 22px;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+  .gate button:hover {
+    background: var(--accent); color: var(--bg); border-color: var(--accent);
+  }
+  .gate-hint {
+    margin-top: 40px;
+    font-size: 11px; color: var(--dim);
+    line-height: 1.8;
+    letter-spacing: 0.04em;
+  }
+
+  /* setup warning */
+  .setup-warn {
+    position: fixed;
+    top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: var(--bg-lift);
+    border: 1px solid var(--error);
+    padding: 24px 28px;
+    max-width: 480px;
+    z-index: 30;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .setup-warn h2 { color: var(--error); font-size: 13px; letter-spacing: 0.2em; margin-bottom: 12px; text-transform: uppercase; }
+  .setup-warn code { background: var(--bg); padding: 2px 6px; color: var(--accent); }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+</style>
+</head>
+<body>
+
+<!-- Name gate -->
+<div class="gate" id="gate">
+  <div class="gate-inner">
+    <div class="gate-tag">▎ enter the room</div>
+    <div class="gate-title">pick a handle.</div>
+    <div class="gate-desc">
+      whatever's written here stays on record. anyone with the link can read and write.
+    </div>
+    <div class="gate-row">
+      <span>›</span>
+      <input id="nameInput" maxlength="20" autofocus placeholder="your handle" autocomplete="off" spellcheck="false" />
+    </div>
+    <button id="gateBtn">connect →</button>
+    <div class="gate-hint">
+      history is saved across sessions.<br />
+      use <kbd>save</kbd> to export the log as a text file.
+    </div>
+  </div>
+</div>
+
+<header style="display:none" id="hdr">
+  <div class="brand">
+    <span class="dot" id="statusDot"></span>
+    <span id="brandText">chat</span>
+  </div>
+  <div class="actions">
+    <button class="action" id="saveBtn" title="Download chat history">save</button>
+    <button class="action" id="leaveBtn" title="Change handle">leave</button>
+  </div>
+</header>
+
+<div id="log" style="display:none"></div>
+
+<form id="form" autocomplete="off" style="display:none">
+  <span class="prompt">›</span>
+  <input id="msgInput" placeholder="" maxlength="1000" autocomplete="off" spellcheck="false" />
+</form>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+
+const SUPABASE_URL      = 'https://mupvwovujsvovshxvlyu.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_jyCgXVpHNePacfZSpiAfYw_K7ruH8BL';
+
+const $ = (id) => document.getElementById(id);
+const $log    = $('log');
+const $form   = $('form');
+const $input  = $('msgInput');
+const $gate   = $('gate');
+const $hdr    = $('hdr');
+const $nameIn = $('nameInput');
+const $dot    = $('statusDot');
+const $brand  = $('brandText');
+
+// guardrail: did the user forget to paste keys?
+if (SUPABASE_URL.startsWith('YOUR_') || SUPABASE_ANON_KEY.startsWith('YOUR_')) {
+  document.body.innerHTML = `
+    <div class="setup-warn">
+      <h2>! setup required</h2>
+      Open <code>index.html</code> and paste your Supabase
+      <code>URL</code> and <code>anon key</code> at the top of the &lt;script&gt; block,
+      then reload.
+    </div>`;
+  throw new Error('Supabase keys not configured.');
+}
+
+const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  realtime: { params: { eventsPerSecond: 10 } }
+});
+
+let me = localStorage.getItem('chat:name') || '';
+if (me) enterChat(me);
+
+$('gateBtn').addEventListener('click', submitName);
+$nameIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitName(); });
+
+function submitName() {
+  const n = $nameIn.value.trim();
+  if (!n) return;
+  me = n;
+  localStorage.setItem('chat:name', n);
+  enterChat(n);
+}
+
+function enterChat(name) {
+  $gate.style.display = 'none';
+  $hdr.style.display = 'flex';
+  $log.style.display = 'block';
+  $form.style.display = 'flex';
+  $brand.textContent = `chat · ${name}`;
+  $input.placeholder = `say something…`;
+  $input.focus();
+  loadHistory();
+  subscribe();
+}
+
+$('leaveBtn').addEventListener('click', () => {
+  localStorage.removeItem('chat:name');
+  location.reload();
+});
+
+async function loadHistory() {
+  const { data, error } = await supa
+    .from('messages')
+    .select('*')
+    .order('created_at', { ascending: true })
+    .limit(1000);
+  if (error) return showError(error.message);
+  if (data.length === 0) {
+    addSystem('the room is empty. write the first line.');
+  } else {
+    data.forEach(renderMsg);
+  }
+  scrollToBottom();
+}
+
+function subscribe() {
+  supa.channel('room-stream')
+    .on('postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages' },
+      (payload) => {
+        // skip ones we already rendered optimistically (matching by id)
+        if (document.querySelector(`[data-id="${payload.new.id}"]`)) return;
+        renderMsg(payload.new);
+        scrollToBottom();
+      }
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED')      $dot.classList.add('online');
+      else                              $dot.classList.remove('online');
+    });
+}
+
+$form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = $input.value.trim();
+  if (!text) return;
+  $input.value = '';
+  const { data, error } = await supa
+    .from('messages')
+    .insert({ sender: me, text })
+    .select()
+    .single();
+  if (error) return showError(error.message);
+  if (data) { renderMsg(data); scrollToBottom(); }
+});
+
+function renderMsg(m) {
+  const row = document.createElement('div');
+  row.className = 'msg' + (m.sender === me ? ' mine' : '');
+  row.dataset.id = m.id;
+
+  const ts = document.createElement('span');
+  ts.className = 'ts';
+  ts.textContent = formatTime(m.created_at);
+
+  const user = document.createElement('span');
+  user.className = 'user';
+  user.textContent = m.sender;
+  user.style.color = colorForName(m.sender);
+
+  const text = document.createElement('span');
+  text.className = 'text';
+  text.textContent = m.text;
+
+  row.append(ts, user, text);
+  $log.appendChild(row);
+}
+
+function addSystem(msg) {
+  const div = document.createElement('div');
+  div.className = 'sys';
+  div.textContent = msg;
+  $log.appendChild(div);
+}
+
+function showError(msg) {
+  const div = document.createElement('div');
+  div.className = 'err';
+  div.textContent = '! ' + msg;
+  $log.appendChild(div);
+  scrollToBottom();
+}
+
+function scrollToBottom() {
+  $log.scrollTop = $log.scrollHeight;
+}
+
+function formatTime(iso) {
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+const USER_COLORS = ['#ffaa55','#e8a87c','#c38d9e','#85cdca','#ffd166','#a8dadc','#b8b8ff','#f4a261','#90be6d','#f08080'];
+function colorForName(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  return USER_COLORS[Math.abs(h) % USER_COLORS.length];
+}
+
+// save / export
+$('saveBtn').addEventListener('click', async () => {
+  const $btn = $('saveBtn');
+  const original = $btn.textContent;
+  $btn.textContent = '…';
+  const { data, error } = await supa
+    .from('messages')
+    .select('*')
+    .order('created_at', { ascending: true });
+  if (error) { $btn.textContent = original; return showError(error.message); }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const head = `chat log — exported ${new Date().toISOString()}\n` +
+               `messages: ${data.length}\n` +
+               '═'.repeat(60) + '\n\n';
+  const body = data.map(m => {
+    const t = new Date(m.created_at).toISOString().replace('T', ' ').slice(0, 19);
+    return `[${t}]  ${m.sender}\n              ${m.text.replace(/\n/g, '\n              ')}`;
+  }).join('\n\n');
+  const blob = new Blob([head + body + '\n'], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `chatlog-${stamp}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  $btn.textContent = 'saved ✓';
+  setTimeout(() => ($btn.textContent = original), 1400);
+});
+</script>
+</body>
+</html>
