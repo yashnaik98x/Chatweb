@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#050505" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>— chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #050505;
+    --bg-lift: #0b0b0a;
+    --border: #16161410;
+    --border-strong: #1f1e1c;
+    --text: #d8d4c8;
+    --muted: #6b6862;
+    --dim: #38362f;
+    --accent: #ffaa55;
+    --error: #ff7a59;
+    --online: #5ad17a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 14px;
+    line-height: 1.65;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* faint noise */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/></svg>");
+    pointer-events: none;
+    z-index: 1;
+    mix-blend-mode: overlay;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border-strong);
+    padding: 14px 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    position: relative;
+    z-index: 3;
+    background: var(--bg);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    min-width: 0;
+  }
+  #brandText { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .online-count {
+    color: var(--online);
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    font-size: 10.5px;
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--dim);
+    flex: none;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .dot.online {
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent), 0 0 2px var(--accent);
+  }
+  .actions { display: flex; gap: 4px; flex: none; }
+  .action {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-family: inherit; font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; padding: 6px 10px;
+    transition: color 0.15s, background 0.15s;
+    border-radius: 2px;
+  }
+  .action:hover { color: var(--accent); background: var(--bg-lift); }
+
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 20px 22px 8px;
+    position: relative;
+    z-index: 2;
+    scroll-behavior: smooth;
+  }
+  .msg {
+    display: grid;
+    grid-template-columns: 52px auto 1fr;
+    gap: 14px;
+    padding: 2px 0;
+    word-break: break-word;
+  }
+  .msg .ts { color: var(--dim); font-size: 11.5px; padding-top: 2px; user-select: none; }
+  .msg .user {
+    color: var(--accent); font-weight: 500;
+    display: flex; align-items: baseline; gap: 6px;
+  }
+  .msg .text { color: var(--text); white-space: pre-wrap; }
+  .msg.mine .user { font-weight: 600; }
+
+  /* per-user presence dot (online indicator next to the handle) */
+  .presence-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--dim);
+    flex: none;
+    align-self: center;
+    transition: background 0.25s, box-shadow 0.25s;
+  }
+  .presence-dot.on {
+    background: var(--online);
+    box-shadow: 0 0 7px rgba(90,209,122,0.7);
+  }
+
+  .sys {
+    color: var(--muted);
+    padding: 10px 0 4px;
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+  }
+  .sys::before { content: '— '; color: var(--dim); }
+
+  .err {
+    color: var(--error);
+    padding: 8px 12px;
+    margin: 8px 0;
+    font-size: 12px;
+    border-left: 2px solid var(--error);
+    background: rgba(255,122,89,0.06);
+  }
+
+  form {
+    border-top: 1px solid var(--border-strong);
+    padding: 14px 22px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    position: relative;
+    z-index: 3;
+    background: var(--bg);
+  }
+  .prompt { color: var(--accent); font-weight: 500; }
+  input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    outline: none;
+    padding: 4px 0;
+    caret-color: var(--accent);
+  }
+  input::placeholder { color: var(--dim); }
+
+  /* gate */
+  .gate {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 20;
+    padding: 24px;
+    overflow-y: auto;
+  }
+  .gate-inner { max-width: 440px; width: 100%; }
+  .gate-tag {
+    font-size: 11px; color: var(--accent);
+    letter-spacing: 0.3em; text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .gate-title {
+    font-size: 22px;
+    color: var(--text);
+    margin-bottom: 12px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .gate-desc {
+    color: var(--muted); font-size: 13px; margin-bottom: 30px;
+    line-height: 1.75;
+  }
+  .gate-row {
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border-strong);
+    padding-bottom: 10px;
+    transition: border-color 0.2s;
+  }
+  .gate-row + .gate-row { margin-top: 20px; }
+  .gate-row:focus-within { border-color: var(--accent); }
+  .gate-row span.sigil { color: var(--accent); font-size: 18px; flex: none; }
+  .gate-row input { font-size: 18px; }
+  .gate-label {
+    font-size: 10px; color: var(--dim);
+    letter-spacing: 0.2em; text-transform: uppercase;
+    margin: 22px 0 8px;
+  }
+  .gate button {
+    margin-top: 26px;
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    font-family: inherit;
+    padding: 13px 22px;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+  .gate button:hover {
+    background: var(--accent); color: var(--bg); border-color: var(--accent);
+  }
+  .gate-hint {
+    margin-top: 34px;
+    font-size: 11px; color: var(--dim);
+    line-height: 1.8;
+    letter-spacing: 0.04em;
+  }
+  .gate-err {
+    color: var(--error); font-size: 12px;
+    margin-top: 16px; min-height: 16px;
+  }
+
+  /* setup warning */
+  .setup-warn {
+    position: fixed;
+    top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: var(--bg-lift);
+    border: 1px solid var(--error);
+    padding: 24px 28px;
+    max-width: 480px;
+    width: calc(100% - 32px);
+    z-index: 30;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .setup-warn h2 { color: var(--error); font-size: 13px; letter-spacing: 0.2em; margin-bottom: 12px; text-transform: uppercase; }
+  .setup-warn code { background: var(--bg); padding: 2px 6px; color: var(--accent); }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+
+  /* ── mobile ─────────────────────────────────────────── */
+  @media (max-width: 600px) {
+    body { font-size: 13.5px; }
+    header { padding: 11px 14px; }
+    .brand { font-size: 10px; gap: 8px; letter-spacing: 0.12em; }
+    .action { padding: 9px 9px; }
+    #log { padding: 14px 14px 6px; }
+    .msg { grid-template-columns: 38px auto 1fr; gap: 9px; }
+    .msg .ts { font-size: 10.5px; }
+    form {
+      padding: 12px 14px;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    }
+    /* 16px keeps iOS Safari from auto-zooming the page on focus */
+    #msgInput { font-size: 16px; }
+    header, form { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); }
+    .gate { padding: 22px 18px; }
+    .gate-title { font-size: 19px; }
+    .gate-row input { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Name + passphrase gate -->
+<div class="gate" id="gate">
+  <div class="gate-inner">
+    <div class="gate-tag">▎ enter the room</div>
+    <div class="gate-title">pick a handle.</div>
+    <div class="gate-desc">
+      the passphrase is the key to this room. messages are encrypted with it
+      before they ever leave your device — without it, the log is unreadable.
+    </div>
+
+    <div class="gate-label">handle</div>
+    <div class="gate-row">
+      <span class="sigil">›</span>
+      <input id="nameInput" maxlength="20" placeholder="your handle" autocomplete="off" spellcheck="false" />
+    </div>
+
+    <div class="gate-label">room passphrase</div>
+    <div class="gate-row">
+      <span class="sigil">#</span>
+      <input id="passInput" type="password" maxlength="80" placeholder="shared secret" autocomplete="off" spellcheck="false" />
+    </div>
+
+    <button id="gateBtn">connect →</button>
+    <div class="gate-err" id="gateErr"></div>
+    <div class="gate-hint">
+      everyone in the room must type the exact same passphrase.<br />
+      history is saved on your device · use <kbd>save</kbd> to export the log.
+    </div>
+  </div>
+</div>
+
+<header style="display:none" id="hdr">
+  <div class="brand">
+    <span class="dot" id="statusDot"></span>
+    <span id="brandText">chat</span>
+    <span class="online-count" id="onlineCount"></span>
+  </div>
+  <div class="actions">
+    <button class="action" id="saveBtn" title="Download chat history">save</button>
+    <button class="action" id="leaveBtn" title="Change handle">leave</button>
+  </div>
+</header>
+
+<div id="log" style="display:none"></div>
+
+<form id="form" autocomplete="off" style="display:none">
+  <span class="prompt">›</span>
+  <input id="msgInput" placeholder="" maxlength="1000" autocomplete="off" spellcheck="false" />
+</form>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+// ═══════════════════════════════════════════════════════
+//  PASTE YOUR SUPABASE CREDENTIALS HERE
+// ═══════════════════════════════════════════════════════
+const SUPABASE_URL      = 'https://mupvwovujsvovshxvlyu.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_jyCgXVpHNePacfZSpiAfYw_K7ruH8BL';
+// ═══════════════════════════════════════════════════════
+
+const $ = (id) => document.getElementById(id);
+const $log    = $('log');
+const $form   = $('form');
+const $input  = $('msgInput');
+const $gate   = $('gate');
+const $hdr    = $('hdr');
+const $nameIn = $('nameInput');
+const $passIn = $('passInput');
+const $gateErr= $('gateErr');
+const $dot    = $('statusDot');
+const $brand  = $('brandText');
+const $count  = $('onlineCount');
+
+// guardrail: did the user forget to paste keys?
+if (SUPABASE_URL.startsWith('YOUR_') || SUPABASE_ANON_KEY.startsWith('YOUR_')) {
+  document.body.innerHTML = `
+    <div class="setup-warn">
+      <h2>! setup required</h2>
+      Open this file and paste your Supabase
+      <code>URL</code> and <code>anon key</code> at the top of the &lt;script&gt; block,
+      then reload.
+    </div>`;
+  throw new Error('Supabase keys not configured.');
+}
+
+const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  realtime: { params: { eventsPerSecond: 10 } }
+});
+
+// ── device detection: notifications only target phones/tablets ──
+const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator.userAgent)
+  || (('ontouchstart' in window) && window.matchMedia('(max-width: 760px)').matches);
+
+// ═══════════════════════════════════════════════════════
+//  ENCRYPTION  (AES-GCM key derived from the room passphrase)
+// ═══════════════════════════════════════════════════════
+const ENC_PREFIX = 'enc:v1.';
+const KDF_SALT = new TextEncoder().encode('chatweb-room-salt-v1');
+let cryptoKey = null;
+
+async function deriveKey(passphrase) {
+  const base = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']
+  );
+  cryptoKey = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: KDF_SALT, iterations: 150000, hash: 'SHA-256' },
+    base,
+    { name: 'AES-GCM', length: 256 },
+    false, ['encrypt', 'decrypt']
+  );
+}
+function toB64(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+function fromB64(s)  { return Uint8Array.from(atob(s), c => c.charCodeAt(0)); }
+
+async function encryptText(plain) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv }, cryptoKey, new TextEncoder().encode(plain)
+  );
+  return ENC_PREFIX + toB64(iv) + '.' + toB64(ct);
+}
+async function decryptText(payload) {
+  const rest = payload.slice(ENC_PREFIX.length);
+  const i = rest.indexOf('.');
+  const iv = fromB64(rest.slice(0, i));
+  const ct = fromB64(rest.slice(i + 1));
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ct);
+  return new TextDecoder().decode(pt);
+}
+const isEncrypted = (m) => typeof m.text === 'string' && m.text.startsWith(ENC_PREFIX);
+
+// turns a raw DB row into a renderable message (decrypts if needed)
+async function prepare(m) {
+  if (!isEncrypted(m)) return { ...m };               // legacy plaintext rows
+  try { return { ...m, text: await decryptText(m.text) }; }
+  catch { return { ...m, text: '🔒 encrypted — passphrase mismatch', _failed: true }; }
+}
+
+// ═══════════════════════════════════════════════════════
+//  GATE  /  SESSION
+// ═══════════════════════════════════════════════════════
+let me = '';
+
+(async function autoEnter() {
+  const savedName = localStorage.getItem('chat:name') || '';
+  const savedPass = localStorage.getItem('chat:pass') || '';
+  if (savedName && savedPass) {
+    me = savedName;
+    await deriveKey(savedPass);
+    enterChat(me);
+  }
+})();
+
+$('gateBtn').addEventListener('click', submitGate);
+$nameIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') $passIn.focus(); });
+$passIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitGate(); });
+
+async function submitGate() {
+  const n = $nameIn.value.trim();
+  const p = $passIn.value;
+  if (!n)        { $gateErr.textContent = 'enter a handle.'; return; }
+  if (!p || p.length < 4) { $gateErr.textContent = 'passphrase must be at least 4 characters.'; return; }
+  $gateErr.textContent = '';
+
+  // asking for notification permission needs a user gesture — this is it
+  if (IS_MOBILE && 'Notification' in window && Notification.permission === 'default') {
+    try { await Notification.requestPermission(); } catch (_) {}
+  }
+
+  me = n;
+  await deriveKey(p);
+  localStorage.setItem('chat:name', n);
+  localStorage.setItem('chat:pass', p);
+  enterChat(n);
+}
+
+function enterChat(name) {
+  $gate.style.display = 'none';
+  $hdr.style.display = 'flex';
+  $log.style.display = 'block';
+  $form.style.display = 'flex';
+  $brand.textContent = `chat · ${name}`;
+  $input.placeholder = `say something…`;
+  $input.focus();
+  loadHistory();
+  subscribeMessages();
+  subscribePresence();
+}
+
+$('leaveBtn').addEventListener('click', () => {
+  localStorage.removeItem('chat:name');
+  localStorage.removeItem('chat:pass');
+  location.reload();
+});
+
+// ═══════════════════════════════════════════════════════
+//  HISTORY
+// ═══════════════════════════════════════════════════════
+async function loadHistory() {
+  const { data, error } = await supa
+    .from('messages')
+    .select('*')
+    .order('created_at', { ascending: true })
+    .limit(1000);
+  if (error) return showError(error.message);
+  if (data.length === 0) {
+    addSystem('the room is empty. write the first line.');
+    scrollToBottom();
+    return;
+  }
+  let encCount = 0, failCount = 0;
+  for (const raw of data) {
+    if (isEncrypted(raw)) encCount++;
+    const m = await prepare(raw);
+    if (m._failed) failCount++;
+    renderMsg(m);
+  }
+  if (encCount > 0 && failCount === encCount) {
+    showError("passphrase doesn't match this room — message content can't be read.");
+  }
+  scrollToBottom();
+}
+
+// ═══════════════════════════════════════════════════════
+//  REALTIME MESSAGES
+// ═══════════════════════════════════════════════════════
+function subscribeMessages() {
+  supa.channel('room-stream')
+    .on('postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages' },
+      async (payload) => {
+        // skip ones we already rendered optimistically (matching by id)
+        if (document.querySelector(`[data-id="${payload.new.id}"]`)) return;
+        const m = await prepare(payload.new);
+        renderMsg(m);
+        scrollToBottom();
+        if (payload.new.sender !== me) notifyIncoming(payload.new.sender, m.text);
+      }
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') $dot.classList.add('online');
+      else                         $dot.classList.remove('online');
+    });
+}
+
+// ═══════════════════════════════════════════════════════
+//  PRESENCE  (who is online right now)
+// ═══════════════════════════════════════════════════════
+const onlineNames = new Set();
+let presenceChannel = null;
+
+function subscribePresence() {
+  presenceChannel = supa.channel('room-presence', {
+    config: { presence: { key: me } }
+  });
+  presenceChannel.on('presence', { event: 'sync' }, () => {
+    const state = presenceChannel.presenceState();
+    onlineNames.clear();
+    Object.values(state).forEach(metas =>
+      metas.forEach(p => { if (p.name) onlineNames.add(p.name); })
+    );
+    refreshPresenceDots();
+    updateOnlineCount();
+  });
+  presenceChannel.subscribe(async (status) => {
+    if (status === 'SUBSCRIBED') {
+      await presenceChannel.track({ name: me, at: Date.now() });
+    }
+  });
+}
+
+function refreshPresenceDots() {
+  document.querySelectorAll('.msg').forEach(row => {
+    const on = onlineNames.has(row.dataset.sender);
+    const d = row.querySelector('.presence-dot');
+    if (d) d.classList.toggle('on', on);
+  });
+}
+function updateOnlineCount() {
+  const n = onlineNames.size;
+  $count.textContent = n ? `· ${n} online` : '';
+}
+
+// ═══════════════════════════════════════════════════════
+//  MOBILE NOTIFICATIONS
+// ═══════════════════════════════════════════════════════
+function notifyIncoming(sender, text) {
+  if (!IS_MOBILE) return;                              // phones / tablets only
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  // only notify when the user isn't actively looking at the chat
+  if (document.visibilityState === 'visible' && document.hasFocus()) return;
+  try {
+    const n = new Notification(sender, {
+      body: text.slice(0, 140),
+      tag: 'chatweb-msg',
+      renotify: true,
+      silent: false
+    });
+    n.onclick = () => { window.focus(); n.close(); };
+  } catch (_) { /* some browsers block constructor — ignore */ }
+}
+
+// ═══════════════════════════════════════════════════════
+//  SEND
+// ═══════════════════════════════════════════════════════
+$form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = $input.value.trim();
+  if (!text) return;
+  $input.value = '';
+  let payload;
+  try { payload = await encryptText(text); }
+  catch (err) { return showError('encryption failed: ' + err.message); }
+
+  const { data, error } = await supa
+    .from('messages')
+    .insert({ sender: me, text: payload })
+    .select()
+    .single();
+  if (error) return showError(error.message);
+  if (data) { renderMsg({ ...data, text }); scrollToBottom(); }   // render the plaintext we already have
+});
+
+// ═══════════════════════════════════════════════════════
+//  RENDERING
+// ═══════════════════════════════════════════════════════
+function renderMsg(m) {
+  const row = document.createElement('div');
+  row.className = 'msg' + (m.sender === me ? ' mine' : '');
+  row.dataset.id = m.id;
+  row.dataset.sender = m.sender;
+
+  const ts = document.createElement('span');
+  ts.className = 'ts';
+  ts.textContent = formatTime(m.created_at);
+
+  const user = document.createElement('span');
+  user.className = 'user';
+
+  const pdot = document.createElement('span');
+  pdot.className = 'presence-dot';
+  if (onlineNames.has(m.sender)) pdot.classList.add('on');
+
+  const uname = document.createElement('span');
+  uname.textContent = m.sender;
+  uname.style.color = colorForName(m.sender);
+
+  user.append(pdot, uname);
+
+  const text = document.createElement('span');
+  text.className = 'text';
+  text.textContent = m.text;
+
+  row.append(ts, user, text);
+  $log.appendChild(row);
+}
+
+function addSystem(msg) {
+  const div = document.createElement('div');
+  div.className = 'sys';
+  div.textContent = msg;
+  $log.appendChild(div);
+}
+
+function showError(msg) {
+  const div = document.createElement('div');
+  div.className = 'err';
+  div.textContent = '! ' + msg;
+  $log.appendChild(div);
+  scrollToBottom();
+}
+
+function scrollToBottom() {
+  $log.scrollTop = $log.scrollHeight;
+}
+
+function formatTime(iso) {
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+const USER_COLORS = ['#ffaa55','#e8a87c','#c38d9e','#85cdca','#ffd166','#a8dadc','#b8b8ff','#f4a261','#90be6d','#f08080'];
+function colorForName(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  return USER_COLORS[Math.abs(h) % USER_COLORS.length];
+}
+
+// re-notify on visibility regain is unnecessary; refresh dots when tab refocuses
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refreshPresenceDots();
+});
+
+// ═══════════════════════════════════════════════════════
+//  SAVE / EXPORT  (decrypts before writing the file)
+// ═══════════════════════════════════════════════════════
+$('saveBtn').addEventListener('click', async () => {
+  const $btn = $('saveBtn');
+  const original = $btn.textContent;
+  $btn.textContent = '…';
+  const { data, error } = await supa
+    .from('messages')
+    .select('*')
+    .order('created_at', { ascending: true });
+  if (error) { $btn.textContent = original; return showError(error.message); }
+
+  const decrypted = [];
+  for (const raw of data) decrypted.push(await prepare(raw));
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const head = `chat log — exported ${new Date().toISOString()}\n` +
+               `messages: ${decrypted.length}\n` +
+               '═'.repeat(60) + '\n\n';
+  const body = decrypted.map(m => {
+    const t = new Date(m.created_at).toISOString().replace('T', ' ').slice(0, 19);
+    return `[${t}]  ${m.sender}\n              ${m.text.replace(/\n/g, '\n              ')}`;
+  }).join('\n\n');
+  const blob = new Blob([head + body + '\n'], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `chatlog-${stamp}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  $btn.textContent = 'saved ✓';
+  setTimeout(() => ($btn.textContent = original), 1400);
+});
+</script>
+</body>
+</html>
